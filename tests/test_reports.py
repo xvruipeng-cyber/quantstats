@@ -2,8 +2,10 @@
 Tests for quantstats.reports module
 """
 
+import base64
 import os
 import tempfile
+from io import BytesIO
 
 import numpy as np
 import pandas as pd
@@ -254,3 +256,31 @@ class TestEdgeCases:
             sample_returns, benchmark=benchmark_no_name, display=False
         )
         assert isinstance(result, pd.DataFrame)
+
+
+class TestEmbedFigure:
+    """Multi-column reports pass a list of figure buffers into the HTML."""
+
+    def test_single_svg_is_embedded_unchanged(self):
+        html = reports._embed_figure(BytesIO(b"<svg>one</svg>"), "svg")
+
+        assert html == "<svg>one</svg>"
+
+    def test_list_keeps_every_svg(self):
+        html = reports._embed_figure(
+            [BytesIO(b"<svg>one</svg>"), BytesIO(b"<svg>two</svg>")],
+            "svg",
+        )
+
+        assert "<svg>one</svg>" in html
+        assert "<svg>two</svg>" in html
+
+    def test_list_keeps_every_png(self):
+        html = reports._embed_figure(
+            [BytesIO(b"png-one"), BytesIO(b"png-two")],
+            "png",
+        )
+
+        assert html.count("<img ") == 2
+        assert base64.b64encode(b"png-one").decode() in html
+        assert base64.b64encode(b"png-two").decode() in html

@@ -714,6 +714,7 @@ def html(
                 prepare_returns=False,
             )
             embed.append(figfile)
+            figfile = _get_utils()._file_stream()
         tpl = tpl.replace("{{dd_periods}}", _embed_figure(embed, figfmt))
 
     # Underwater (drawdown) plot
@@ -764,6 +765,7 @@ def html(
                 active=active,
             )
             embed.append(figfile)
+            figfile = _get_utils()._file_stream()
         tpl = tpl.replace("{{monthly_heatmap}}", _embed_figure(embed, figfmt))
 
     # Returns distribution analysis
@@ -800,6 +802,7 @@ def html(
                 prepare_returns=False,
             )
             embed.append(figfile)
+            figfile = _get_utils()._file_stream()
         tpl = tpl.replace("{{returns_dist}}", _embed_figure(embed, figfmt))
 
     # Clean up any remaining template placeholders
@@ -2598,25 +2601,19 @@ def _embed_figure(figfiles, figfmt):
     >>> embed_str = _embed_figure(figfile, 'svg')
     >>> embed_str = _embed_figure([fig1, fig2], 'png')
     """
-    # Handle multiple figures
-    if isinstance(figfiles, list):
-        embed_string = "\n"
-        for figfile in figfiles:
-            figbytes = figfile.getvalue()
-            if figfmt == "svg":
-                # SVG can be embedded directly as text
-                return figbytes.decode()
-            # For other formats, encode as base64 data URI
-            data_uri = _b64encode(figbytes).decode()
-            embed_string.join(f'<img src="data:image/{figfmt};base64,{data_uri}" />')
-    else:
-        # Handle single figure
-        figbytes = figfiles.getvalue()
-        if figfmt == "svg":
-            # SVG can be embedded directly as text
-            return figbytes.decode()
-        # For other formats, encode as base64 data URI
-        data_uri = _b64encode(figbytes).decode()
-        embed_string = f'<img src="data:image/{figfmt};base64,{data_uri}" />'
+    # A list used to share one buffer and then discard the join, so every
+    # image after the first was absent from the HTML. Keep a single figure
+    # on the same path so its markup does not change.
+    if not isinstance(figfiles, list):
+        figfiles = [figfiles]
 
-    return embed_string
+    parts = []
+    for figfile in figfiles:
+        figbytes = figfile.getvalue()
+        if figfmt == "svg":
+            parts.append(figbytes.decode())
+        else:
+            data_uri = _b64encode(figbytes).decode()
+            parts.append(f'<img src="data:image/{figfmt};base64,{data_uri}" />')
+
+    return "\n".join(parts)
