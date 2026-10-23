@@ -4,6 +4,7 @@ Tests for quantstats.reports module
 
 import base64
 import os
+import re
 import tempfile
 from io import BytesIO
 
@@ -275,6 +276,20 @@ class TestEmbedFigure:
         assert "<svg>one</svg>" in html
         assert "<svg>two</svg>" in html
 
+    def test_joined_svgs_do_not_share_ids(self):
+        svg = (
+            b'<svg><clipPath id="figure_1"><path id="figure_10"/></clipPath>'
+            b'<use href="#figure_1" clip-path="url(#figure_10)"/></svg>'
+        )
+        html = reports._embed_figure([BytesIO(svg), BytesIO(svg)], "svg")
+
+        ids = re.findall(r'\bid="([^"]+)"', html)
+        assert len(ids) == len(set(ids)) == 4
+        for ref in re.findall(r'href="#([^"]+)"', html):
+            assert ref in ids
+        for ref in re.findall(r"url\(#([^)]+)\)", html):
+            assert ref in ids
+
     def test_list_keeps_every_png(self):
         html = reports._embed_figure(
             [BytesIO(b"png-one"), BytesIO(b"png-two")],
@@ -284,3 +299,34 @@ class TestEmbedFigure:
         assert html.count("<img ") == 2
         assert base64.b64encode(b"png-one").decode() in html
         assert base64.b64encode(b"png-two").decode() in html
+
+    def test_html_dataframe_writes_one_figure_per_column(self):
+        dates = pd.date_range("2020-01-01", periods=120, freq="B")
+        rng = np.random.default_rng(0)
+        frame = pd.DataFrame(
+            rng.normal(0, 0.01, size=(len(dates), 2)),
+            index=dates,
+            columns=["Alpha", "Beta"],
+        )
+        one = frame[["Alpha"]].squeeze()
+        one.name = "Alpha"
+
+        def write(returns):
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as handle:
+                path = handle.name
+            reports.html(returns, output=path, figfmt="svg", title="Two")
+            with open(path, encoding="utf-8") as handle:
+                html = handle.read()
+            os.remove(path)
+            return html
+
+        single = write(one)
+        double = write(frame)
+
+        # Drawdown periods, the monthly heatmap, and the distribution each
+        # add one figure per column. The shared buffer used to keep only the first.
+        assert double.count("<svg") == single.count("<svg") + 3
+        assert "Alpha" in double and "Beta" in double
+        ids = re.findall(r'\bid="([^"]+)"', double)
+        assert ids
+        assert len(ids) == len(set(ids))

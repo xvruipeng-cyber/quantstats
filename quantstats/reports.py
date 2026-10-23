@@ -2575,6 +2575,21 @@ def _open_html(html):
         iDisplay(iHTML(jscode))
 
 
+def _namespace_svg(svg):
+    """Give one SVG its own id prefix so several charts can share a document."""
+    idents = set(_regex.findall(r'\bid="([^"]+)"', svg))
+    if not idents:
+        return svg
+    serial = getattr(_namespace_svg, "serial", 0) + 1
+    _namespace_svg.serial = serial
+    prefix = "qs{0}-".format(serial)
+    for ident in sorted(idents, key=len, reverse=True):
+        svg = svg.replace('id="{0}"'.format(ident), 'id="{0}{1}"'.format(prefix, ident))
+        svg = svg.replace("url(#{0})".format(ident), "url(#{0}{1})".format(prefix, ident))
+        svg = svg.replace('href="#{0}"'.format(ident), 'href="#{0}{1}"'.format(prefix, ident))
+    return svg
+
+
 def _embed_figure(figfiles, figfmt):
     """
     Embed matplotlib figures in HTML format for reports.
@@ -2611,7 +2626,7 @@ def _embed_figure(figfiles, figfmt):
     for figfile in figfiles:
         figbytes = figfile.getvalue()
         if figfmt == "svg":
-            parts.append(figbytes.decode())
+            parts.append(_namespace_svg(figbytes.decode()))
         else:
             data_uri = _b64encode(figbytes).decode()
             parts.append(f'<img src="data:image/{figfmt};base64,{data_uri}" />')
