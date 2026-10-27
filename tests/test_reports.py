@@ -289,6 +289,21 @@ class TestEmbedFigure:
             assert ref in ids
         for ref in re.findall(r"url\(#([^)]+)\)", html):
             assert ref in ids
+        bare = [re.sub(r"^qs\d+-", "", ident) for ident in ids]
+        assert bare.count("figure_1") == 2
+        assert bare.count("figure_10") == 2
+
+    def test_shorter_undeclared_ref_does_not_rewrite_longer_id(self):
+        svg = (
+            b'<svg id="figure_10">'
+            b'<use href="#figure_1" clip-path="url(#figure_10)"/></svg>'
+        )
+        html = reports._embed_figure(BytesIO(svg), "svg")
+
+        assert re.search(r'href="#figure_1"', html)
+        assert not re.search(r'href="#qs\d+-figure_1"', html)
+        assert re.search(r'id="qs\d+-figure_10"', html)
+        assert re.search(r"url\(#qs\d+-figure_10\)", html)
 
     def test_list_keeps_every_png(self):
         html = reports._embed_figure(

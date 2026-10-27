@@ -2575,19 +2575,37 @@ def _open_html(html):
         iDisplay(iHTML(jscode))
 
 
+# Matplotlib writes double-quoted id="...", href="#...", and url(#...).
+# The closing delimiter is part of the match, so figure_1 does not match
+# inside figure_10 and the rewrite does not depend on replacement order.
+_SVG_LOCAL_REF = _regex.compile(r'\bid="([^"]+)"|href="#([^"]+)"|url\(#([^)]+)\)')
+
+
 def _namespace_svg(svg):
     """Give one SVG its own id prefix so several charts can share a document."""
-    idents = set(_regex.findall(r'\bid="([^"]+)"', svg))
+    idents = {
+        match.group(1)
+        for match in _SVG_LOCAL_REF.finditer(svg)
+        if match.group(1) is not None
+    }
     if not idents:
         return svg
     serial = getattr(_namespace_svg, "serial", 0) + 1
     _namespace_svg.serial = serial
-    prefix = "qs{0}-".format(serial)
-    for ident in sorted(idents, key=len, reverse=True):
-        svg = svg.replace('id="{0}"'.format(ident), 'id="{0}{1}"'.format(prefix, ident))
-        svg = svg.replace("url(#{0})".format(ident), "url(#{0}{1})".format(prefix, ident))
-        svg = svg.replace('href="#{0}"'.format(ident), 'href="#{0}{1}"'.format(prefix, ident))
-    return svg
+    prefix = f"qs{serial}-"
+
+    def rewrite(match):
+        ident = next(group for group in match.groups() if group is not None)
+        if ident not in idents:
+            return match.group(0)
+        renamed = prefix + ident
+        if match.group(1) is not None:
+            return f'id="{renamed}"'
+        if match.group(2) is not None:
+            return f'href="#{renamed}"'
+        return f"url(#{renamed})"
+
+    return _SVG_LOCAL_REF.sub(rewrite, svg)
 
 
 def _embed_figure(figfiles, figfmt):
